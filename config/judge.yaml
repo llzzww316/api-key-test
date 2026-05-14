@@ -1,5 +1,5 @@
 # 全局默认裁判 — 没写 judge_provider 的模型走这个
 judge:
-  default_provider: "中转商B"   # 默认用哪家当裁判
-  model: "gpt-4o-mini"          # 裁判用的模型
+  default_provider: "glm-custom"
+  model: "glm-5.1"              # 裁判用的模型 — 必须是中转商实际支持的模型
   max_tokens: 200

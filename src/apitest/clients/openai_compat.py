@@ -8,7 +8,7 @@ class OpenAICompatClient(BaseClient):
     def __init__(self, base_url: str, api_key: str, chat_path: str = "/v1/chat/completions"):
         super().__init__(base_url, api_key)
         self.chat_path = chat_path
-        self._http = httpx.Client(timeout=120.0)
+        self._http = httpx.Client(timeout=httpx.Timeout(connect=30.0, read=180.0, write=30.0, pool=30.0))
 
     def chat(self, model: str, messages: list[dict], **kwargs) -> UnifiedResponse:
         payload = {"model": model, "messages": messages, **kwargs}
@@ -20,10 +20,15 @@ class OpenAICompatClient(BaseClient):
         resp.raise_for_status()
         data = resp.json()
         choice = data["choices"][0]
+        msg = choice["message"]
+        content = msg.get("content", "") or ""
+        # Some models put actual output in reasoning_content while content is empty
+        if not content and msg.get("reasoning_content"):
+            content = msg["reasoning_content"]
         usage = data.get("usage", {})
         return UnifiedResponse(
             model=data.get("model", model),
-            content=choice["message"]["content"],
+            content=content,
             usage={
                 "prompt": usage.get("prompt_tokens", 0),
                 "completion": usage.get("completion_tokens", 0),
@@ -57,6 +62,9 @@ class OpenAICompatClient(BaseClient):
                 data = json.loads(data_str)
                 delta = data["choices"][0].get("delta", {})
                 content = delta.get("content", "")
+                # Handle reasoning_content in streaming (some models use this)
+                if not content:
+                    content = delta.get("reasoning_content", "")
                 if content:
                     now = time.perf_counter()
                     if first_chunk_time is None:

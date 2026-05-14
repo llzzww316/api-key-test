@@ -59,16 +59,6 @@ def generate_report(results, provider_name, output_dir="reports"):
         lines.append("")
 
     # Budget
-    budget_info = results[0].get("budget", {}) if results else {}
-    if budget_info:
-        lines.extend([
-            "## Budget",
-            f"- Limit: ${budget_info.get('limit', 0):.4f}",
-            f"- Spent: ${budget_info.get('spent', 0):.4f}",
-            f"- Remaining: ${budget_info.get('remaining', 0):.4f}",
-            "",
-        ])
-
     content = "\n".join(lines)
     path.write_text(content, encoding="utf-8")
     return path

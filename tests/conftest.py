@@ -6,7 +6,6 @@ load_dotenv()
 
 from apitest.config import load_providers, load_models, load_judge
 from apitest.clients import OpenAICompatClient, AnthropicCompatClient
-from apitest.budget import BudgetGuard
 from apitest.judge import JudgeClient
 
 
@@ -58,11 +57,6 @@ def model_list():
 
 
 @pytest.fixture(scope="session")
-def budget():
-    return BudgetGuard()
-
-
-@pytest.fixture(scope="session")
 def judge_default(providers):
     """Default judge config from judge.yaml — shared session fixture."""
     cfg = load_judge()
@@ -71,24 +65,14 @@ def judge_default(providers):
     cfg_found = _get_proxy_config(providers, default_provider) if default_provider else None
     if cfg_found:
         return {"cfg": cfg_found, "model": model}
-    # Last resort: any available proxy
     proxies = providers.get("proxies", {})
     first = next(iter(proxies.values()), providers.get("proxy", {}))
     return {"cfg": first, "model": model}
 
 
-# ── Function-scoped fixtures ──
-
 @pytest.fixture
-def proxy_client(providers, model_entry, budget):
+def proxy_client(providers, model_entry):
     """Client for the model being tested — selected by model_entry.provider."""
-    # Budget check before creating client — skip if over budget
-    estimated = model_entry.get("claimed_context", 128000) // 10  # rough estimate per test
-    try:
-        budget.check(estimated, model_entry["id"])
-    except BudgetExceeded:
-        pytest.skip(f"Budget exceeded: ${budget.spent:.2f}/${budget.limit:.2f}")
-
     proxy_name = model_entry.get("provider", "")
     cfg = _get_proxy_config(providers, proxy_name) if proxy_name else _get_proxy_config(providers, "")
     return _make_client(cfg, model_entry["protocol"])
@@ -101,10 +85,16 @@ def judge(providers, model_entry, judge_default):
     model = judge_default["model"]
 
     if judge_provider:
-        # Cross-evaluation: use specified judge provider
         cfg = _get_proxy_config(providers, judge_provider)
+        # Pick protocol: use openai_compat if available, else anthropic_compat
+        if cfg.get("openai_compat"):
+            protocol = "openai_compat"
+        elif cfg.get("anthorpic_compat"):
+            protocol = "anthropic_compat"
+        else:
+            protocol = "openai_compat"
         return JudgeClient(
-            api_key=cfg["api_key"], base_url=cfg["base_url"], model=model
+            api_key=cfg["api_key"], base_url=cfg["base_url"], model=model, protocol=protocol
         )
 
     # Per-model judge not specified — try to auto-cross: pick ANY other proxy
@@ -113,14 +103,16 @@ def judge(providers, model_entry, judge_default):
     others = [k for k in proxies if k != tested_provider]
     if others:
         cfg = proxies[others[0]]
+        protocol = "openai_compat" if cfg.get("openai_compat") else "anthropic_compat"
         return JudgeClient(
-            api_key=cfg["api_key"], base_url=cfg["base_url"], model=model
+            api_key=cfg["api_key"], base_url=cfg["base_url"], model=model, protocol=protocol
         )
 
     # Only one proxy available — use default judge (same as proxy, not ideal but works)
     cfg = judge_default["cfg"]
+    protocol = "openai_compat" if cfg.get("openai_compat") else "anthropic_compat"
     return JudgeClient(
-        api_key=cfg["api_key"], base_url=cfg["base_url"], model=model
+        api_key=cfg["api_key"], base_url=cfg["base_url"], model=model, protocol=protocol
     )
 
 
@@ -185,8 +177,10 @@ _results = []
 
 
 @pytest.fixture(autouse=True)
-def _collect_results(request, budget):
+def _collect_results(request, model_entry):
     """Auto-collect test results for reporting."""
+    # Capture model_entry while it's still alive
+    _entry = {"id": model_entry["id"], "provider": model_entry.get("provider", "")}
     yield
     if "model_entry" not in request.fixturenames:
         return  # skip unit tests that don't use model parameterization
@@ -201,14 +195,12 @@ def _collect_results(request, budget):
         elif request.node.rep_call.skipped:
             reason = "skipped (no official key or budget)"
 
-    model_entry = request.getfixturevalue("model_entry")
     _results.append({
-        "model": model_entry["id"],
-        "provider": model_entry.get("provider", ""),
+        "model": _entry["id"],
+        "provider": _entry.get("provider", ""),
         "test_name": request.node.originalname if hasattr(request.node, "originalname") else request.node.name,
         "verdict": outcome,
         "reason": reason,
-        "budget": {"limit": budget.limit, "spent": budget.spent, "remaining": budget.remaining},
     })
 
 
@@ -224,4 +216,4 @@ def pytest_sessionfinish(session, exitstatus):
         # Use provider name from first model entry
         provider = _results[0].get("provider", "unknown") if _results else "unknown"
         report_path = generate_report(_results, provider)
-        print(f"\n📄 Report: {report_path}")
+        print(f"\nReport: {report_path}")
