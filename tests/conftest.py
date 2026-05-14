@@ -128,3 +128,50 @@ def pytest_runtest_setup(item):
         model_entry = item.callspec.params.get("model_entry", {})
         if not model_entry.get("has_official"):
             pytest.skip("No official API key for this model")
+
+
+# ── Report collection & generation ──
+
+from apitest.reporter import generate_report
+
+_results = []
+
+
+@pytest.fixture(autouse=True)
+def _collect_results(request, budget):
+    """Auto-collect test results for reporting."""
+    yield
+    if "model_entry" not in request.fixturenames:
+        return  # skip unit tests that don't use model parameterization
+
+    outcome = "PASS"
+    reason = ""
+    if hasattr(request.node, "rep_call"):
+        if request.node.rep_call.failed:
+            outcome = "FAIL"
+            if request.node.rep_call.longrepr:
+                reason = str(request.node.rep_call.longrepr)[:200]
+        elif request.node.rep_call.skipped:
+            reason = "skipped (no official key or budget)"
+
+    model_entry = request.getfixturevalue("model_entry")
+    _results.append({
+        "model": model_entry["id"],
+        "test_name": request.node.originalname if hasattr(request.node, "originalname") else request.node.name,
+        "verdict": outcome,
+        "reason": reason,
+        "budget": {"limit": budget.limit, "spent": budget.spent, "remaining": budget.remaining},
+    })
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    rep = outcome.get_result()
+    setattr(item, "rep_" + rep.when, rep)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if _results:
+        report_path = generate_report(_results, "ai18n")
+        print(f"\n📄 Report: {report_path}")
