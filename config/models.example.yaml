@@ -1,0 +1,17 @@
+models:
+  - id: "gpt-4o"
+    protocol: openai_compat
+    claimed_context: 128000
+    has_official: true
+    official_provider: openai
+    official_model: "gpt-4o"
+
+  - id: "claude-sonnet-4-20250514"
+    protocol: anthropic_compat
+    claimed_context: 200000
+    has_official: false
+
+  - id: "deepseek-v3"
+    protocol: openai_compat
+    claimed_context: 128000
+    has_official: false

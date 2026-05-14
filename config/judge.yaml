@@ -1,0 +1,5 @@
+judge:
+  provider: "openai"
+  model: "gpt-4o-mini"
+  fallback: "proxy:gpt-4o-mini"
+  max_tokens: 200

@@ -1,0 +1,17 @@
+proxy:
+  name: "ai18n"
+  base_url: "https://api.ai18n.chat"
+  api_key: "${AI18N_API_KEY}"
+  openai_compat: "/v1/chat/completions"
+  anthropic_compat: "/v1/messages"
+  models_list: "/v1/models"
+
+officials:
+  openai:
+    base_url: "https://api.openai.com"
+    api_key: "${OPENAI_API_KEY}"
+    compat: "openai"
+  # anthropic:
+  #   base_url: "https://api.anthropic.com"
+  #   api_key: "${ANTHROPIC_API_KEY}"
+  #   compat: "anthropic"
