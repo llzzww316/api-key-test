@@ -1,17 +1,22 @@
+# 每个模型指定 provider + judge_provider 实现交叉评估
 models:
   - id: "gpt-4o"
+    provider: "中转商A"
+    judge_provider: "中转商B"     # 用另一家当裁判
     protocol: openai_compat
     claimed_context: 128000
-    has_official: true
-    official_provider: openai
-    official_model: "gpt-4o"
-
-  - id: "claude-sonnet-4-20250514"
-    protocol: anthropic_compat
-    claimed_context: 200000
     has_official: false
 
-  - id: "deepseek-v3"
+  - id: "gpt-4o"
+    provider: "中转商B"
+    judge_provider: "中转商A"     # 互相裁判
     protocol: openai_compat
     claimed_context: 128000
+    has_official: false
+
+  - id: "claude-sonnet-4-20250514"
+    provider: "中转商A"
+    # judge_provider 不写就自动选另一家；只有一家就自评
+    protocol: anthropic_compat
+    claimed_context: 200000
     has_official: false

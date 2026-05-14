@@ -10,6 +10,35 @@ from apitest.budget import BudgetGuard
 from apitest.judge import JudgeClient
 
 
+def _get_proxy_config(providers: dict, name: str) -> dict:
+    """Look up a proxy by name in proxies dict or officials dict."""
+    proxies = providers.get("proxies", {})
+    if name in proxies:
+        return proxies[name]
+    officials = providers.get("officials", {})
+    if name in officials:
+        return officials[name]
+    # Backward compat: old format with single "proxy"
+    if "proxy" in providers:
+        return providers["proxy"]
+    pytest.exit(f"Provider '{name}' not found in config. Check providers.yaml")
+
+
+def _make_client(cfg: dict, protocol: str):
+    if protocol == "anthropic_compat":
+        return AnthropicCompatClient(
+            base_url=cfg["base_url"],
+            api_key=cfg["api_key"],
+            messages_path=cfg.get("anthropic_compat", "/v1/messages"),
+        )
+    else:
+        return OpenAICompatClient(
+            base_url=cfg["base_url"],
+            api_key=cfg["api_key"],
+            chat_path=cfg.get("openai_compat", "/v1/chat/completions"),
+        )
+
+
 # ── Session-scoped fixtures ──
 
 @pytest.fixture(scope="session")
@@ -34,51 +63,58 @@ def budget():
 
 
 @pytest.fixture(scope="session")
-def judge_config(providers):
+def judge_default(providers):
+    """Default judge config from judge.yaml — shared session fixture."""
     cfg = load_judge()
-    provider = cfg.get("provider", "openai")
-    official = providers.get("officials", {}).get(provider, {})
-    if official:
-        return {
-            "api_key": official["api_key"],
-            "base_url": official["base_url"],
-            "model": cfg["model"],
-        }
-    proxy = providers["proxy"]
-    return {
-        "api_key": proxy["api_key"],
-        "base_url": proxy["base_url"],
-        "model": cfg["model"],
-    }
-
-
-@pytest.fixture(scope="session")
-def judge(judge_config):
-    return JudgeClient(
-        api_key=judge_config["api_key"],
-        base_url=judge_config["base_url"],
-        model=judge_config["model"],
-    )
+    default_provider = cfg.get("default_provider", "")
+    model = cfg["model"]
+    cfg_found = _get_proxy_config(providers, default_provider) if default_provider else None
+    if cfg_found:
+        return {"cfg": cfg_found, "model": model}
+    # Last resort: any available proxy
+    proxies = providers.get("proxies", {})
+    first = next(iter(proxies.values()), providers.get("proxy", {}))
+    return {"cfg": first, "model": model}
 
 
 # ── Function-scoped fixtures ──
 
 @pytest.fixture
 def proxy_client(providers, model_entry):
-    proxy = providers["proxy"]
-    protocol = model_entry["protocol"]
-    if protocol == "anthropic_compat":
-        return AnthropicCompatClient(
-            base_url=proxy["base_url"],
-            api_key=proxy["api_key"],
-            messages_path=proxy.get("anthropic_compat", "/v1/messages"),
+    """Client for the model being tested — selected by model_entry.provider."""
+    proxy_name = model_entry.get("provider", "")
+    cfg = _get_proxy_config(providers, proxy_name) if proxy_name else _get_proxy_config(providers, "")
+    return _make_client(cfg, model_entry["protocol"])
+
+
+@pytest.fixture
+def judge(providers, model_entry, judge_default):
+    """Judge client — per-model, can use a different proxy for cross-evaluation."""
+    judge_provider = model_entry.get("judge_provider", "")
+    model = judge_default["model"]
+
+    if judge_provider:
+        # Cross-evaluation: use specified judge provider
+        cfg = _get_proxy_config(providers, judge_provider)
+        return JudgeClient(
+            api_key=cfg["api_key"], base_url=cfg["base_url"], model=model
         )
-    else:
-        return OpenAICompatClient(
-            base_url=proxy["base_url"],
-            api_key=proxy["api_key"],
-            chat_path=proxy.get("openai_compat", "/v1/chat/completions"),
+
+    # Per-model judge not specified — try to auto-cross: pick ANY other proxy
+    proxies = providers.get("proxies", {})
+    tested_provider = model_entry.get("provider", "")
+    others = [k for k in proxies if k != tested_provider]
+    if others:
+        cfg = proxies[others[0]]
+        return JudgeClient(
+            api_key=cfg["api_key"], base_url=cfg["base_url"], model=model
         )
+
+    # Only one proxy available — use default judge (same as proxy, not ideal but works)
+    cfg = judge_default["cfg"]
+    return JudgeClient(
+        api_key=cfg["api_key"], base_url=cfg["base_url"], model=model
+    )
 
 
 @pytest.fixture

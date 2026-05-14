@@ -1,17 +1,18 @@
-proxy:
-  name: "ai18n"
-  base_url: "https://api.ai18n.chat"
-  api_key: "${AI18N_API_KEY}"
-  openai_compat: "/v1/chat/completions"
-  anthropic_compat: "/v1/messages"
-  models_list: "/v1/models"
+# 多个中转商 — 可以互相交叉评估
+proxies:
+  中转商A:
+    base_url: "https://xxx.com"
+    api_key: "sk-xxx"
+    openai_compat: "/v1/chat/completions"
+    anthropic_compat: "/v1/messages"
+
+  中转商B:
+    base_url: "https://yyy.com"
+    api_key: "sk-yyy"
+    openai_compat: "/v1/chat/completions"
 
 officials:
-  openai:
-    base_url: "https://api.openai.com"
-    api_key: "${OPENAI_API_KEY}"
-    compat: "openai"
-  # anthropic:
-  #   base_url: "https://api.anthropic.com"
-  #   api_key: "${ANTHROPIC_API_KEY}"
-  #   compat: "anthropic"
+  # openai:
+  #   base_url: "https://api.openai.com"
+  #   api_key: "${OPENAI_API_KEY}"
+  #   compat: "openai"
