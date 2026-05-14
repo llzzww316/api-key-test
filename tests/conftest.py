@@ -80,8 +80,15 @@ def judge_default(providers):
 # ── Function-scoped fixtures ──
 
 @pytest.fixture
-def proxy_client(providers, model_entry):
+def proxy_client(providers, model_entry, budget):
     """Client for the model being tested — selected by model_entry.provider."""
+    # Budget check before creating client — skip if over budget
+    estimated = model_entry.get("claimed_context", 128000) // 10  # rough estimate per test
+    try:
+        budget.check(estimated, model_entry["id"])
+    except BudgetExceeded:
+        pytest.skip(f"Budget exceeded: ${budget.spent:.2f}/${budget.limit:.2f}")
+
     proxy_name = model_entry.get("provider", "")
     cfg = _get_proxy_config(providers, proxy_name) if proxy_name else _get_proxy_config(providers, "")
     return _make_client(cfg, model_entry["protocol"])
@@ -147,7 +154,11 @@ def pytest_generate_tests(metafunc):
         path = Path("config/models.yaml")
         if path.exists():
             models = load_models(path)
-            metafunc.parametrize("model_entry", models, ids=lambda m: m["id"])
+            # Unique ID: "provider/model_id" to avoid duplicate model IDs across providers
+            metafunc.parametrize(
+                "model_entry", models,
+                ids=lambda m: f"{m.get('provider', '?')}/{m['id']}"
+            )
 
 
 # ── Custom markers ──
@@ -193,6 +204,7 @@ def _collect_results(request, budget):
     model_entry = request.getfixturevalue("model_entry")
     _results.append({
         "model": model_entry["id"],
+        "provider": model_entry.get("provider", ""),
         "test_name": request.node.originalname if hasattr(request.node, "originalname") else request.node.name,
         "verdict": outcome,
         "reason": reason,
@@ -209,5 +221,7 @@ def pytest_runtest_makereport(item, call):
 
 def pytest_sessionfinish(session, exitstatus):
     if _results:
-        report_path = generate_report(_results, "ai18n")
+        # Use provider name from first model entry
+        provider = _results[0].get("provider", "unknown") if _results else "unknown"
+        report_path = generate_report(_results, provider)
         print(f"\n📄 Report: {report_path}")

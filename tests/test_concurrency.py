@@ -18,18 +18,23 @@ def _single_request(client, model_id, index):
         return {"index": index, "success": False, "latency": elapsed, "error": str(e)}
 
 
-def test_concurrency(proxy_client, model_entry):
+def test_concurrency(proxy_client, providers, model_entry):
     """3 concurrent requests — compare to single request latency."""
+    # Create fresh clients per thread to avoid httpx thread-safety issues
+    from apitest.clients import OpenAICompatClient, AnthropicCompatClient
+    from conftest import _get_proxy_config, _make_client
+
     single = _single_request(proxy_client, model_entry["id"], 0)
     single_latency = single["latency"]
     print(f"Single latency: {single_latency:.0f}ms")
 
     results = []
     with ThreadPoolExecutor(max_workers=3) as pool:
-        futures = [
-            pool.submit(_single_request, proxy_client, model_entry["id"], i)
-            for i in range(3)
-        ]
+        futures = []
+        for i in range(3):
+            cfg = _get_proxy_config(providers, model_entry.get("provider", ""))
+            client = _make_client(cfg, model_entry["protocol"])
+            futures.append(pool.submit(_single_request, client, model_entry["id"], i))
         for f in as_completed(futures):
             results.append(f.result())
 

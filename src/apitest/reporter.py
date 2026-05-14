@@ -14,10 +14,11 @@ def generate_report(results, provider_name, output_dir="reports"):
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     path = output_dir / f"report-{timestamp}.md"
 
-    # Group by model
+    # Group by provider/model to distinguish same model from different providers
     by_model = defaultdict(list)
     for r in results:
-        by_model[r["model"]].append(r)
+        key = f"{r.get('provider', '')}/{r['model']}" if r.get("provider") else r["model"]
+        by_model[key].append(r)
 
     # Build summary table
     test_names = sorted(set(r["test_name"] for r in results))

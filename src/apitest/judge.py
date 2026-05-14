@@ -51,12 +51,20 @@ Format: PASS|WARN|FAIL: evidence""",
 
 
 class JudgeClient:
-    def __init__(self, api_key: str, base_url: str, model: str = "gpt-4o-mini"):
-        self.client = OpenAICompatClient(
-            base_url=base_url,
-            api_key=api_key,
-            chat_path="/v1/chat/completions",
-        )
+    def __init__(self, api_key: str, base_url: str, model: str = "gpt-4o-mini", protocol: str = "openai_compat"):
+        if protocol == "anthropic_compat":
+            from .clients.anthropic_compat import AnthropicCompatClient
+            self.client = AnthropicCompatClient(
+                base_url=base_url,
+                api_key=api_key,
+                messages_path="/v1/messages",
+            )
+        else:
+            self.client = OpenAICompatClient(
+                base_url=base_url,
+                api_key=api_key,
+                chat_path="/v1/chat/completions",
+            )
         self.model = model
 
     def evaluate(self, category: str, context: dict) -> dict:
